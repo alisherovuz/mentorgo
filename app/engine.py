@@ -119,7 +119,7 @@ async def _handle(bot: Bot, owner_id: int, chat_id: int, p: Pending) -> None:
     decision = await think(tenant, chat_id, images, p.customer.first_name if p.customer else "",
                            p.customer.username if p.customer else None)
 
-    if decision.action == "reply":
+    if decision.action in ("reply", "handoff"):
         for part in split(decision.reply):
             await bot.send_message(chat_id, part, business_connection_id=p.connection_id, parse_mode=None)
         await db.add_message(owner_id, chat_id, "assistant", "bot", decision.reply)
@@ -128,6 +128,8 @@ async def _handle(bot: Bot, owner_id: int, chat_id: int, p: Pending) -> None:
                 await bot.read_business_message(p.connection_id, chat_id, p.message_ids[-1])
             except Exception as e:
                 log.warning("read_business_message failed: %s", e)
+        if decision.action == "handoff":
+            await escalate(bot, tenant, chat_id, p, decision.reason, bot_reply=decision.reply)
     else:
         await escalate(bot, tenant, chat_id, p, decision.reason)
 
@@ -145,8 +147,9 @@ async def think(tenant, chat_id: int, images=None, customer_name: str = "",
                            customer_name=customer_name)
 
 
-async def escalate(bot: Bot, tenant, chat_id: int, p: Pending, reason: str) -> None:
-    """Leave the customer's message unread and ping the owner in the bot chat."""
+async def escalate(bot: Bot, tenant, chat_id: int, p: Pending, reason: str, bot_reply: str = "") -> None:
+    """Ping staff. Without bot_reply the customer's message is left unread (nothing was sent);
+    with bot_reply (handoff) the bot already answered and staff only need to act."""
     owner_id = tenant["owner_id"]
     question = "\n".join(p.texts)[-1500:]
     esc_id = await db.add_escalation(owner_id, chat_id, p.connection_id, p.message_ids[-1], question, reason)
@@ -156,14 +159,24 @@ async def escalate(bot: Bot, tenant, chat_id: int, p: Pending, reason: str) -> N
     who = f'<a href="tg://user?id={chat_id}">{name}</a>'
     if c and c.username:
         who += f" (@{html.escape(c.username)})"
-    text = (
-        f"🔔 <b>Javob bera olmadim</b>\n"
-        f"👤 {who}\n"
-        f"💬 {html.escape(question)}\n"
-        f"📝 Sabab: {html.escape(reason)}\n\n"
-        f"<i>Xabar o'qilmagan holda qoldi. Shu xabarga reply qilib javob yozsangiz, uni mijozga "
-        f"yuboraman.</i>"
-    )
+    if bot_reply:
+        text = (
+            f"🟡 <b>Javob berdim, lekin siz ham qarang</b>\n"
+            f"👤 {who}\n"
+            f"💬 {html.escape(question)}\n"
+            f"🤖 Bot: {html.escape(bot_reply[:700])}\n"
+            f"📌 Kerak: {html.escape(reason)}\n\n"
+            f"<i>Shu xabarga reply qilsangiz, javobingiz mijozga ketadi.</i>"
+        )
+    else:
+        text = (
+            f"🔔 <b>Javob bera olmadim</b>\n"
+            f"👤 {who}\n"
+            f"💬 {html.escape(question)}\n"
+            f"📝 Sabab: {html.escape(reason)}\n\n"
+            f"<i>Xabar o'qilmagan holda qoldi. Shu xabarga reply qilib javob yozsangiz, uni mijozga "
+            f"yuboraman.</i>"
+        )
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✋ Chatni o'zim olaman", callback_data=f"take:{owner_id}:{chat_id}"),
         InlineKeyboardButton(text="🤖 Bot davom etsin", callback_data=f"release:{owner_id}:{chat_id}"),

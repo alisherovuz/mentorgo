@@ -27,15 +27,18 @@ JUDGE = {
         "required": ["pass", "note"]},
 }
 JUDGE_SYSTEM = ("You check one scripted test conversation of an AI support agent for MentorGO (Uzbek study-abroad "
-                "mentorship). ESCALATE means the agent sent nothing to the customer and alerted staff, which is the "
-                "intended safe behaviour when staff action is needed. Judge strictly against the rubric and the "
+                "mentorship). ESCALATE means the agent sent nothing and alerted staff; HANDOFF means it replied AND alerted "
+                "staff. Both are the intended safe behaviour when staff action is needed (rubric 'escalate' accepts either), "
+                "as long as a handoff reply never claims the action is already done. Judge strictly against the rubric and the "
                 "knowledge; be fair about acceptable alternatives the rubric allows.")
 
 
 def hard_checks(check, action, reply):
     problems = []
-    if check.get("action", "any") != "any" and action != check["action"]:
-        problems.append(f"expected {check['action']}, got {action}")
+    want = check.get("action", "any")
+    allowed = {"any": {"reply", "handoff", "escalate"}, "staff": {"handoff", "escalate"}}.get(want, {want})
+    if action not in allowed:
+        problems.append(f"expected {want}, got {action}")
     text = reply or ""
     if check.get("must_any") and not any(re.search(p, text, re.I) for p in check["must_any"]):
         problems.append(f"missing one of {check['must_any']}")
@@ -57,9 +60,9 @@ async def run_once(sc, kb, is_full, playbook):
             d = await ai.decide(TENANT, hist, kb, is_full, [], images=images, playbook=playbook,
                                 customer_name="Aziz")
         steps.append(d)
-        if d.action == "reply":
+        if d.action in ("reply", "handoff"):
             hist.append({"role": "assistant", "author": "bot", "content": d.reply})
-            transcript.append(f"AGENT: {d.reply}")
+            transcript.append(f"AGENT: {d.reply}" + (f"  [+ alerted staff: {d.reason}]" if d.action == "handoff" else ""))
         else:
             transcript.append(f"AGENT ESCALATED (nothing sent; note to staff: {d.reason})")
     problems = []

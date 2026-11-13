@@ -24,7 +24,7 @@ def client() -> AsyncAnthropic:
 
 @dataclass
 class Decision:
-    action: str          # "reply" | "escalate"
+    action: str          # "reply" | "handoff" | "escalate"
     reply: str = ""
     reason: str = ""
 
@@ -37,8 +37,8 @@ RESPOND_TOOL = {
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["reply", "escalate"],
-                "description": "reply = you can answer well. escalate = a human must answer; nothing is sent to the customer.",
+                "enum": ["reply", "handoff", "escalate"],
+                "description": "reply = you can fully answer. handoff = send a useful reply AND alert staff, because staff must also act. escalate = send nothing; staff answer.",
             },
             "reply": {
                 "type": "string",
@@ -46,7 +46,7 @@ RESPOND_TOOL = {
             },
             "reason": {
                 "type": "string",
-                "description": "For escalate: one short line in Uzbek for staff explaining why (empty string for reply).",
+                "description": "For handoff/escalate: one short line in Uzbek for staff saying what they must do (empty string for reply).",
             },
         },
         "required": ["action"],
@@ -65,14 +65,12 @@ HOW TO WRITE
 
 FACTS ABOUT THE BUSINESS
 - Prices, dates, schedules, discounts, addresses, contacts, policies, availability, guarantees: state ONLY what the KNOWLEDGE section says. Never invent, estimate or round such facts.
-- If the customer needs a business fact that is not in KNOWLEDGE, choose action=escalate. Do not send "I don't know" or "I'll check" messages: when you escalate, nothing is sent and the message stays unread for the owner.
 
-ALSO ESCALATE WHEN
-- the customer asks for a real person/manager, is angry, complains, or reports a problem with a payment, refund, order or account;
-- the request needs a personal decision (custom deal, exception, partnership, booking confirmation) or personal data;
-- the message is unclear after considering the conversation, or is a voice/video/file you cannot see;
-- you are less than confident your answer is correct and complete.
-- If staff will need something from the customer first (a screenshot, which account or phone they used, which course), you may reply asking only for that; when it arrives, escalate.
+THREE WAYS TO RESPOND
+1. reply: you can answer fully from KNOWLEDGE and general knowledge, and no staff action is needed. This should be most messages. Answer what you can even if the customer is an existing student, as long as the answer is a general rule from KNOWLEDGE.
+2. handoff: you can say something genuinely useful now, but staff must also act (send an invoice, confirm a payment from a receipt, confirm availability or admission, check this customer's own package/balance, reschedule a session, a hot lead ready to pay, the customer asks for a human). Reply with the useful part and a calm next step ("jamoamiz tekshirib yozadi"), and tell staff in reason exactly what to do. Never say an action is already done, never promise a time.
+3. escalate: send nothing, the message stays unread for staff. Use it only when any reply could be wrong or harmful: complaints, anger, refunds, conflicts, partnership offers, a business fact the customer needs that is not in KNOWLEDGE, a message you cannot understand even with the visible conversation, a voice/video/file you cannot see.
+- If staff will need something from the customer first (a screenshot, which account or phone they used, which course), reply asking only for that; when it arrives, handoff or escalate.
 
 REFERRALS
 - If a REFERRAL LINKS topic matches the conversation, add a natural closing line that points the customer there with the link, once per topic per conversation (check the history).
@@ -178,6 +176,9 @@ async def decide(tenant, history, knowledge: str, knowledge_is_full: bool, links
         return Decision("escalate", reason="Model javob qaytarmadi")
     action = data.get("action")
     reply = (data.get("reply") or "").strip()
+    reason = (data.get("reason") or "").strip()
     if action == "reply" and reply:
         return Decision("reply", reply=reply)
+    if action == "handoff" and reply:
+        return Decision("handoff", reply=reply, reason=reason or "Xodim ham qarashi kerak")
     return Decision("escalate", reason=(data.get("reason") or "Aniq javob topilmadi").strip())

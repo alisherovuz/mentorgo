@@ -57,7 +57,9 @@ class FakeMessages:
         seen_prompts.append(kw)
         last = kw["messages"][-1]["content"][-1]["text"].lower()
         system = " ".join(b["text"] for b in kw["system"])
-        if "pul" in last:
+        if "qo'shilmoqchiman" in last:
+            inp = {"action": "handoff", "reply": "Ajoyib! Jamoamiz tasdiqlab invoys yuboradi.", "reason": "Tayyor mijoz: Standard"}
+        elif "pul" in last:
             inp = {"action": "escalate", "reason": "To'lov qaytarish so'ralmoqda"}
         elif "erasmus" in last:
             inp = {"action": "reply", "reply": "Erasmus+ Yevropa dasturi. Hamjamiyat: https://t.me/erasmus_uz"}
@@ -183,6 +185,15 @@ async def main():
         "from": {"id": OWNER, "is_bot": False, "first_name": "N"}}))
     srcs = await db.list_sources(OWNER)
     results.append(ok(any(s["kind"] == "learned" for s in srcs), "learned after pressing button"))
+
+    # handoff: customer gets a reply, message is read, staff get a yellow alert
+    calls.clear()
+    await feed(upd(next(u), business_message=msg(19, CUSTOMER, CUSTOMER, "Standardga qo'shilmoqchiman", business=True)))
+    await asyncio.sleep(0.8)
+    to_cust = [c[1] for c in calls if c[0] == "SendMessage" and c[1].business_connection_id == CONN]
+    to_owner = [c[1] for c in calls if c[0] == "SendMessage" and c[1].chat_id == OWNER]
+    results.append(ok(to_cust and "invoys" in to_cust[0].text and any(c[0] == "ReadBusinessMessage" for c in calls), "handoff replies and marks read"))
+    results.append(ok(to_owner and "Javob berdim" in to_owner[0].text and "Tayyor mijoz" in to_owner[0].text, "handoff alerts staff"))
 
     # owner types by hand -> bot steps aside
     calls.clear()

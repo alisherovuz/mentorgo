@@ -48,7 +48,7 @@ HISTORY_LIMIT = _int("HISTORY_LIMIT", "24")
 # Daily cap on AI answers (protects the Claude bill). 0 = unlimited.
 DAILY_REPLY_LIMIT = _int("DAILY_REPLY_LIMIT", "800")
 
-# Key for data/history.enc (chats from before the bot was connected). Empty = not used.
+# Key for pastchats/history.enc (chats from before the bot was connected). Empty = not used.
 HISTORY_KEY = _env("HISTORY_KEY", "")
 # How many past messages to show the model for a returning customer.
 PAST_HISTORY_LIMIT = _int("PAST_HISTORY_LIMIT", "14")

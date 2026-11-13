@@ -319,10 +319,13 @@ async def free_text(message: Message) -> None:
     await db.add_message(owner_id, owner_id, "user", "customer", message.text)
     await message.bot.send_chat_action(message.chat.id, "typing")
     decision = await engine.think(t, owner_id)
-    if decision.action == "reply":
+    if decision.action in ("reply", "handoff"):
         await db.add_message(owner_id, owner_id, "assistant", "bot", decision.reply)
         for part in engine.split(decision.reply):
             await message.answer(part)
+        if decision.action == "handoff":
+            await message.answer(f"🟡 <i>(Xodimlarga ham bildirishnoma borardi.)</i>\nKerak: {html.escape(decision.reason)}",
+                                 parse_mode="HTML")
     else:
         await message.answer(f"🔔 <i>(Haqiqiy chatda javob bermasdim, xabar o'qilmagan qolardi va sizga "
                              f"bildirishnoma kelardi.)</i>\nSabab: {html.escape(decision.reason)}",

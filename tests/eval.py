@@ -34,7 +34,8 @@ GRADE_TOOL = {
 }
 
 GRADER = """You review an AI support agent for MentorGO (Uzbek study-abroad mentorship). For one real customer message you get: what the human manager actually replied, whether a human action was really required (needs_human), and what the agent did.
-Rules for decision_ok: if needs_human is true, escalating is right; a reply that only asks for the info staff need (e.g. a screenshot) is also right; a reply that pretends the action was done (e.g. "to'lovingiz qabul qilindi", "invoys yubordik") is wrong. If needs_human is false, replying is right, and escalating is acceptable only when the knowledge truly lacks the fact.
+The agent can REPLY, ESCALATE (send nothing, staff answer) or HANDOFF (reply AND alert staff to act).
+Rules for decision_ok: if needs_human is true, ESCALATE or HANDOFF is right, and a reply that only asks for the info staff need (e.g. a screenshot) is also right; any reply that pretends the action was done (e.g. "to'lovingiz qabul qilindi", "invoys yubordik") is wrong. If needs_human is false, REPLY is right, HANDOFF is acceptable when its reply answers the question, and ESCALATE is acceptable only when the knowledge truly lacks the fact.
 Facts in the agent's reply may differ from the manager's when the manager's reply is older than the knowledge; judge against the KNOWLEDGE excerpt first. Penalize any invented price, date, discount or promise hard."""
 
 
@@ -69,7 +70,9 @@ async def run_case(case, kb, is_full, playbook, sem):
         except Exception as e:  # keep going
             return case, None, {"score": 0, "note": f"agent error: {e}", "decision_ok": False,
                                 "facts": "wrong", "tone_ok": False}
-        agent = f"ESCALATED (reason: {d.reason})" if d.action == "escalate" else f"REPLIED: {d.reply}"
+        agent = (f"ESCALATED (reason: {d.reason})" if d.action == "escalate" else
+                 f"HANDOFF: replied \"{d.reply}\" and alerted staff ({d.reason})" if d.action == "handoff" else
+                 f"REPLIED: {d.reply}")
         shown = "\n".join(f"{'MANAGER' if h['role'] == 'assistant' else 'CUSTOMER'}: {h['content'][:400]}"
                           for h in (case.get("history") or [])[-8:]) or "-"
         prompt = (f"CONVERSATION THE AGENT SAW BEFORE (last turns):\n{shown}\n\n"
@@ -105,6 +108,7 @@ async def main(path, report):
              f"- Average score: **{avg:.2f} / 5**",
              f"- Right reply/escalate decision: **{dec}/{n}**",
              f"- Facts: {dict(facts)}",
+             f"- Actions: {dict(Counter(d.action for _, d, _ in results if d))}",
              f"- Tone ok: {sum(g['tone_ok'] for _, _, g in results)}/{n}"]
     if USAGE:
         lat = sorted(u[0] for u in USAGE)
@@ -114,7 +118,8 @@ async def main(path, report):
                   f"cache write {tot[2]/len(USAGE):.0f}, output {tot[3]/len(USAGE):.0f}"]
     lines += ["", "## Weakest cases", ""]
     for case, d, g in sorted(results, key=lambda r: r[2]["score"])[:25]:
-        agent = "—" if d is None else (f"ESCALATE: {d.reason}" if d.action == "escalate" else d.reply)
+        agent = "—" if d is None else (f"ESCALATE: {d.reason}" if d.action == "escalate" else
+                                      f"HANDOFF ({d.reason}): {d.reply}" if d.action == "handoff" else d.reply)
         lines += [f"### {g['score']}/5 · {case.get('topic', '')} · {case['file']}",
                   f"- Customer: {case['customer'][:400]}", f"- Manager: {case['manager'][:400]}",
                   f"- Agent: {agent[:500]}", f"- Note: {g['note']}", ""]
