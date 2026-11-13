@@ -72,7 +72,7 @@ async def run_once(sc, kb, is_full, playbook):
     j = await ai.call_tool(
         system=[{"type": "text", "text": f"{JUDGE_SYSTEM}\n\nKNOWLEDGE:\n{kb}", "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": f"RUBRIC: {sc['rubric']}\n\nTRANSCRIPT:\n" + "\n".join(transcript)}],
-        tool=JUDGE, max_tokens=2000) or {"pass": False, "note": "judge failed"}
+        tool=JUDGE, max_tokens=2000, model=os.getenv("GRADER_MODEL")) or {"pass": False, "note": "judge failed"}
     ok = not problems and bool(j.get("pass"))
     return {"ok": ok, "problems": problems, "judge": j, "transcript": transcript}
 
