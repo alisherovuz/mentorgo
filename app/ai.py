@@ -155,11 +155,25 @@ def _strict(schema: dict) -> dict:
     return {k: v for k, v in out.items() if k not in ("minimum", "maximum")}
 
 
+last_call_at: float = 0.0  # monotonic time of the last agent call (real or warm-up)
+
+
+def _output_config(tool: dict) -> dict:
+    cfg = {"format": {"type": "json_schema", "schema": _strict(tool["input_schema"])}}
+    if config.CLAUDE_EFFORT:
+        cfg["effort"] = config.CLAUDE_EFFORT
+    return cfg
+
+
 async def call_tool(*, system, messages, tool: dict, max_tokens: int = 4096, model: str | None = None) -> dict | None:
     """Get a JSON answer shaped like `tool`'s input schema, via structured outputs."""
+    global last_call_at
+    import time
     resp = await client().messages.create(
         model=model or config.CLAUDE_MODEL, max_tokens=max_tokens, system=system, messages=messages,
-        output_config={"format": {"type": "json_schema", "schema": _strict(tool["input_schema"])}})
+        output_config=_output_config(tool))
+    if tool is RESPOND_TOOL:
+        last_call_at = time.monotonic()
     text = "".join(getattr(b, "text", "") for b in resp.content).strip()
     try:
         return json.loads(text)
@@ -186,3 +200,17 @@ async def decide(tenant, history, knowledge: str, knowledge_is_full: bool, links
     if action == "handoff" and reply:
         return Decision("handoff", reply=reply, reason=reason or "Xodim ham qarashi kerak")
     return Decision("escalate", reason=(data.get("reason") or "Aniq javob topilmadi").strip())
+
+
+async def warm(system) -> object:
+    """Re-read the cached prompt with a tiny request so the 1-hour cache does not expire
+    between customers. Same model, system and output format as a real answer, so it hits the
+    same cache entry; costs a cache read (~10x cheaper than writing the cache again)."""
+    global last_call_at
+    import time
+    resp = await client().messages.create(
+        model=config.CLAUDE_MODEL, max_tokens=8, system=system,
+        messages=[{"role": "user", "content": [{"type": "text", "text": "."}]}],
+        output_config=_output_config(RESPOND_TOOL))
+    last_call_at = time.monotonic()
+    return resp.usage

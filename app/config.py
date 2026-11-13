@@ -55,3 +55,8 @@ PAST_HISTORY_LIMIT = _int("PAST_HISTORY_LIMIT", "14")
 
 # Prompt cache lifetime: "1h" (default) or "5m".
 CACHE_TTL = _env("CACHE_TTL", "1h")
+
+# Model effort for answers ("low", "medium", "high"); empty = the model's default.
+CLAUDE_EFFORT = _env("CLAUDE_EFFORT", "")
+# Keep the prompt cache warm during these local hours (Asia/Tashkent), "" disables. Format "8-23".
+WARM_HOURS = _env("WARM_HOURS", "8-23")

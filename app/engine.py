@@ -195,3 +195,40 @@ def split(text: str, limit: int = 4000) -> list[str]:
         text = text[cut:].lstrip()
     parts.append(text)
     return parts
+
+
+async def warm_cache(owner_id: int) -> None:
+    """Refresh the 1-hour prompt cache with the exact system prompt real answers use."""
+    tenant = await db.get_tenant(owner_id)
+    if not tenant or not tenant["is_enabled"] or tenant["paused"]:
+        return
+    kb, is_full = await knowledge.context_for(owner_id, "")
+    if not is_full:
+        return  # retrieval mode: the prompt differs per question, nothing stable to keep warm
+    links = await db.list_links(owner_id)
+    await ai.warm(ai.build_system(tenant, kb, True, links, knowledge.read_playbook()))
+
+
+def _warm_window_open() -> bool:
+    if not config.WARM_HOURS:
+        return False
+    import datetime as dt
+    start, end = (int(x) for x in config.WARM_HOURS.split("-"))
+    hour = dt.datetime.now(dt.timezone(dt.timedelta(hours=5))).hour  # Tashkent, no DST
+    return start <= hour < end
+
+
+async def keep_cache_warm(owner_id: int) -> None:
+    """While the cache from a real answer is still alive (< 60 min) and it is working hours,
+    re-read it just before it expires. Never starts a cache on its own: if nobody wrote,
+    nothing is spent."""
+    import time
+    while True:
+        await asyncio.sleep(60)
+        try:
+            idle = time.monotonic() - ai.last_call_at
+            if ai.last_call_at and 50 * 60 <= idle < 58 * 60 and _warm_window_open():
+                await warm_cache(owner_id)
+                log.info("Prompt cache kept warm")
+        except Exception as e:
+            log.warning("Cache warm-up failed: %s", e)

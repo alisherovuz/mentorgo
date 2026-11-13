@@ -4,7 +4,7 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand
 
-from . import config, db, history, knowledge
+from . import config, db, engine, history, knowledge
 from .handlers import admin, business, staff
 
 
@@ -34,6 +34,8 @@ async def main() -> None:
         BotCommand(command="pause", description="To'xtatish"),
         BotCommand(command="resume", description="Davom ettirish"),
     ])
+    if config.OWNER_ID and config.WARM_HOURS:
+        asyncio.create_task(engine.keep_cache_warm(config.OWNER_ID))
     me = await bot.get_me()
     logging.info("Started as @%s (business mode: %s)", me.username, getattr(me, "can_connect_to_business", None))
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

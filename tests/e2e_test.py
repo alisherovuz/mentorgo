@@ -149,7 +149,12 @@ async def main():
     sys_text = seen_prompts[-1]["system"][0]["text"]
     results.append(ok("erasmus_uz" in sys_text and "SALES MODE" in sys_text and "EduCenter" in sys_text, "prompt has links, sales mode, profile"))
     results.append(ok("PLAYBOOK_MARKER" in sys_text and "SEED_MARKER" in sys_text, "playbook and seeded knowledge in prompt"))
-    first_turns = seen_prompts[-1]["messages"]
+    from app import engine as eng
+    real_sys = seen_prompts[-1]["system"][0]["text"]
+    await eng.warm_cache(OWNER)
+    results.append(ok(seen_prompts[-1]["system"][0]["text"] == real_sys and seen_prompts[-1]["max_tokens"] <= 16,
+                      "cache warm-up sends the identical cached prompt"))
+    first_turns = seen_prompts[-2]["messages"]
     results.append(ok("[eski yozishma, 2026-08-01] Standard paketni oldim" in first_turns[0]["content"][0]["text"], "past chat history included"))
     results.append(ok(first_turns[-1]["role"] == "user" and "kurs narxi" in first_turns[-1]["content"][-1]["text"], "current message last, roles alternate"))
 
