@@ -1,0 +1,4 @@
+knowledge_review/
+tests/
+.env
+**/__pycache__
