@@ -86,6 +86,20 @@ CREATE TABLE IF NOT EXISTS escalations (
 ALTER TABLE escalations ADD COLUMN IF NOT EXISTS notify_chat_id BIGINT;
 ALTER TABLE escalations ADD COLUMN IF NOT EXISTS answer TEXT;
 CREATE INDEX IF NOT EXISTS escalations_notify_idx ON escalations (notify_chat_id, notify_msg_id);
+
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS past_messages (
+    username TEXT NOT NULL,
+    idx      INT NOT NULL,
+    ts       TEXT NOT NULL,
+    who      TEXT NOT NULL,
+    content  TEXT NOT NULL,
+    PRIMARY KEY (username, idx)
+);
 """
 
 pool: asyncpg.Pool | None = None
@@ -300,3 +314,27 @@ async def stats(owner_id: int) -> asyncpg.Record:
              (SELECT count(*) FROM escalations WHERE owner_id=$1 AND NOT resolved) AS open_escalations,
              (SELECT count(*) FROM sources WHERE owner_id=$1) AS sources""",
         owner_id)
+
+
+# ---------- meta & past chats ----------
+
+async def get_meta(key: str) -> str | None:
+    return await _p().fetchval("SELECT value FROM meta WHERE key=$1", key)
+
+
+async def set_meta(key: str, value: str) -> None:
+    await _p().execute("INSERT INTO meta (key, value) VALUES ($1,$2) "
+                       "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value", key, value)
+
+
+async def replace_past_messages(rows: list[tuple]) -> None:
+    async with _p().acquire() as con, con.transaction():
+        await con.execute("DELETE FROM past_messages")
+        await con.copy_records_to_table("past_messages", records=rows,
+                                        columns=["username", "idx", "ts", "who", "content"])
+
+
+async def past_messages(username: str, limit: int) -> list[asyncpg.Record]:
+    rows = await _p().fetch("SELECT ts, who, content FROM past_messages WHERE username=$1 "
+                            "ORDER BY idx DESC LIMIT $2", username, limit)
+    return list(reversed(rows))

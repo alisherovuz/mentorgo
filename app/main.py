@@ -4,7 +4,7 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand
 
-from . import config, db, knowledge
+from . import config, db, history, knowledge
 from .handlers import admin, business, staff
 
 
@@ -17,6 +17,8 @@ async def main() -> None:
     if config.OWNER_ID:
         n = await knowledge.seed(config.OWNER_ID)
         logging.info("Seeded %d knowledge files from %s", n, config.KNOWLEDGE_DIR)
+    h = await history.load()
+    logging.info("Past chats: %s", "already loaded" if h == -1 else f"{h} loaded")
     bot = Bot(config.BOT_TOKEN)
     dp = Dispatcher()
     dp.include_routers(business.router, staff.router, admin.router)

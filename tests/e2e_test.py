@@ -65,7 +65,10 @@ class FakeMessages:
             inp = {"action": "reply", "reply": "Kurs narxi oyiga 600 000 so'm. Qaysi darajadasiz?"}
         else:
             inp = {"action": "escalate", "reason": "Ma'lumot yo'q"}
-        return SimpleNamespace(content=[SimpleNamespace(type="tool_use", name="respond", input=inp)])
+        import json as _json
+        full = {"action": inp["action"], "reply": inp.get("reply", ""), "reason": inp.get("reason", "")}
+        return SimpleNamespace(content=[SimpleNamespace(type="text", text=_json.dumps(full))],
+                               stop_reason="end_turn", usage=SimpleNamespace(output_tokens=10))
 
 
 ai._client = SimpleNamespace(messages=FakeMessages())
@@ -127,6 +130,10 @@ async def main():
     t = await db.get_tenant(OWNER)
     results.append(ok(t["connection_id"] == CONN and t["can_reply"] and t["can_read"], "business connection stored"))
 
+    # returning customer: past chat (before the bot) is shown to the model
+    await db.replace_past_messages([("ali_uz", 0, "2026-08-01 10:00:00", "customer", "Standard paketni oldim"),
+                                    ("ali_uz", 1, "2026-08-01 10:05:00", "manager", "Qabul qildik, guruh havolasi botda")])
+
     # customer: two quick messages -> one answer, then read
     calls.clear()
     await feed(upd(next(u), business_message=msg(10, CUSTOMER, CUSTOMER, "Assalomu alaykum", business=True)))
@@ -140,7 +147,9 @@ async def main():
     sys_text = seen_prompts[-1]["system"][0]["text"]
     results.append(ok("erasmus_uz" in sys_text and "SALES MODE" in sys_text and "EduCenter" in sys_text, "prompt has links, sales mode, profile"))
     results.append(ok("PLAYBOOK_MARKER" in sys_text and "SEED_MARKER" in sys_text, "playbook and seeded knowledge in prompt"))
-    results.append(ok(seen_prompts[-1]["messages"][0]["role"] == "user" and len(seen_prompts[-1]["messages"]) == 1, "merged consecutive user turns"))
+    first_turns = seen_prompts[-1]["messages"]
+    results.append(ok("[eski yozishma, 2026-08-01] Standard paketni oldim" in first_turns[0]["content"][0]["text"], "past chat history included"))
+    results.append(ok(first_turns[-1]["role"] == "user" and "kurs narxi" in first_turns[-1]["content"][-1]["text"], "current message last, roles alternate"))
 
     # echo of our own reply must be ignored
     calls.clear()

@@ -8,5 +8,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 COPY knowledge ./knowledge
+COPY data ./data
 
 CMD ["python", "-m", "app.main"]

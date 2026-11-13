@@ -163,7 +163,8 @@ async def call_tool(*, system, messages, tool: dict, max_tokens: int = 4096, mod
         return json.loads(text)
     except Exception:
         log.warning("Bad JSON from model (stop_reason=%s, out_tokens=%s): %r",
-                    resp.stop_reason, getattr(resp.usage, "output_tokens", None), text[:300])
+                    getattr(resp, "stop_reason", None), getattr(getattr(resp, "usage", None), "output_tokens", None),
+                    text[:300])
         return None
 
 

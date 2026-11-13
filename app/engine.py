@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from aiogram import Bot
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, User
 
-from . import ai, config, db, knowledge
+from . import ai, config, db, history, knowledge
 
 log = logging.getLogger(__name__)
 
@@ -116,7 +116,8 @@ async def _handle(bot: Bot, owner_id: int, chat_id: int, p: Pending) -> None:
         await bot.download(file_id, destination=buf)
         images.append((buf.getvalue(), "image/jpeg"))
 
-    decision = await think(tenant, chat_id, images, p.customer.first_name if p.customer else "")
+    decision = await think(tenant, chat_id, images, p.customer.first_name if p.customer else "",
+                           p.customer.username if p.customer else None)
 
     if decision.action == "reply":
         for part in split(decision.reply):
@@ -131,9 +132,12 @@ async def _handle(bot: Bot, owner_id: int, chat_id: int, p: Pending) -> None:
         await escalate(bot, tenant, chat_id, p, decision.reason)
 
 
-async def think(tenant, chat_id: int, images=None, customer_name: str = "") -> ai.Decision:
+async def think(tenant, chat_id: int, images=None, customer_name: str = "",
+                username: str | None = None) -> ai.Decision:
     owner_id = tenant["owner_id"]
-    hist = await db.history(owner_id, chat_id, config.HISTORY_LIMIT)
+    hist = list(await db.history(owner_id, chat_id, config.HISTORY_LIMIT))
+    if len(hist) < 10:  # returning customer: show what was said before the bot was connected
+        hist = await history.context_for(username, config.PAST_HISTORY_LIMIT) + hist
     recent_customer = " ".join(r["content"] for r in hist[-6:] if r["role"] == "user")
     kb, is_full = await knowledge.context_for(owner_id, recent_customer)
     links = await db.list_links(owner_id)
