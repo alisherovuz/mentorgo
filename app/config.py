@@ -52,3 +52,6 @@ DAILY_REPLY_LIMIT = _int("DAILY_REPLY_LIMIT", "800")
 HISTORY_KEY = _env("HISTORY_KEY", "")
 # How many past messages to show the model for a returning customer.
 PAST_HISTORY_LIMIT = _int("PAST_HISTORY_LIMIT", "14")
+
+# Prompt cache lifetime: "1h" (default) or "5m".
+CACHE_TTL = _env("CACHE_TTL", "1h")

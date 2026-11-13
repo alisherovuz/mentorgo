@@ -29,6 +29,10 @@ class Decision:
     reason: str = ""
 
 
+# 1-hour prompt cache: support chats are bursty with gaps longer than the default 5 minutes,
+# so a longer cache is far cheaper overall (one write per idle hour instead of per gap).
+_CACHE = {"type": "ephemeral", "ttl": config.CACHE_TTL} if config.CACHE_TTL else {"type": "ephemeral"}
+
 RESPOND_TOOL = {
     "name": "respond",
     "description": "Send your decision for the customer's latest message(s).",
@@ -111,9 +115,9 @@ def build_system(tenant, knowledge: str, knowledge_is_full: bool, links, playboo
     if knowledge_is_full:
         # Everything is stable per business, so cache the whole block.
         return [{"type": "text", "text": f"{static}\n\nKNOWLEDGE:\n{kb_text}",
-                 "cache_control": {"type": "ephemeral"}}] + who
+                 "cache_control": _CACHE}] + who
     return [
-        {"type": "text", "text": static, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": static, "cache_control": _CACHE},
         {"type": "text", "text": f"KNOWLEDGE (most relevant excerpts for this question):\n{kb_text}"},
     ] + who
 
