@@ -1,6 +1,6 @@
 """Chats from before the bot was connected, so it can recognise returning customers.
 
-data/history.enc is encrypted (tools/build_history.py); HISTORY_KEY decrypts it. Loaded into
+pastchats/history.enc is encrypted (tools/build_history.py); HISTORY_KEY decrypts it. Loaded into
 Postgres once per file version and looked up by the customer's @username.
 """
 from __future__ import annotations
@@ -14,11 +14,12 @@ from . import config, db
 
 log = logging.getLogger(__name__)
 
-FILE = Path(__file__).resolve().parent.parent / "data" / "history.enc"
+FILE = Path(__file__).resolve().parent.parent / "pastchats" / "history.enc"
 
 
 async def load() -> int:
     if not config.HISTORY_KEY or not FILE.exists():
+        log.warning("Past chats not loaded: %s", "HISTORY_KEY empty" if not config.HISTORY_KEY else f"{FILE} missing")
         return 0
     raw = FILE.read_bytes()
     version = hashlib.sha256(raw).hexdigest()[:16]
@@ -28,7 +29,7 @@ async def load() -> int:
     try:
         data = json.loads(Fernet(config.HISTORY_KEY.encode()).decrypt(raw))
     except InvalidToken:
-        log.error("HISTORY_KEY does not match data/history.enc; past chats not loaded")
+        log.error("HISTORY_KEY does not match pastchats/history.enc; past chats not loaded")
         return 0
     rows = [(user, i, m["t"], m["who"], m["text"]) for user, msgs in data.items() for i, m in enumerate(msgs)]
     await db.replace_past_messages(rows)

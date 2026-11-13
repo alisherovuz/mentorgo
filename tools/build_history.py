@@ -1,4 +1,4 @@
-"""Build data/history.enc from a folder of exported Telegram chats (one <username>.txt per chat).
+"""Build pastchats/history.enc from a folder of exported Telegram chats (one <username>.txt per chat).
 
 Usage: HISTORY_KEY=... python tools/build_history.py <chats_dir> [--exclude name1,name2]
 The output is encrypted with Fernet; the bot decrypts it with the same HISTORY_KEY.
@@ -49,7 +49,7 @@ def main() -> None:
         if any(m["who"] == "customer" and m["text"] != "[rasm yoki fayl]" for m in msgs):
             data[user] = msgs
     key = os.environ["HISTORY_KEY"].encode()
-    out = Path(__file__).resolve().parent.parent / "data" / "history.enc"
+    out = Path(__file__).resolve().parent.parent / "pastchats" / "history.enc"
     out.parent.mkdir(exist_ok=True)
     out.write_bytes(Fernet(key).encrypt(json.dumps(data, ensure_ascii=False).encode()))
     print(f"{len(data)} chats, {sum(len(v) for v in data.values())} messages -> {out} ({out.stat().st_size} bytes)")

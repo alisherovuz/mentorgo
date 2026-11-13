@@ -38,16 +38,42 @@ Rules for decision_ok: if needs_human is true, escalating is right; a reply that
 Facts in the agent's reply may differ from the manager's when the manager's reply is older than the knowledge; judge against the KNOWLEDGE excerpt first. Penalize any invented price, date, discount or promise hard."""
 
 
+USAGE = []  # (seconds, input, cache_read, cache_write, output) per agent call
+_orig_create = None
+
+
+def _instrument():
+    """Record latency and token usage of every agent call."""
+    global _orig_create
+    msgs = ai.client().messages
+    _orig_create = msgs.create
+
+    async def timed(**kw):
+        import time
+        t = time.perf_counter()
+        r = await _orig_create(**kw)
+        is_grader = str(kw["system"][0].get("text", "")).startswith("You review an AI support agent")
+        if not is_grader:
+            u = r.usage
+            USAGE.append((time.perf_counter() - t, u.input_tokens, getattr(u, "cache_read_input_tokens", 0) or 0,
+                          getattr(u, "cache_creation_input_tokens", 0) or 0, u.output_tokens))
+        return r
+    msgs.create = timed
+
+
 async def run_case(case, kb, is_full, playbook, sem):
     async with sem:
-        hist = [{"role": "user", "author": "customer", "content": case["customer"]}]
+        hist = list(case.get("history") or []) + [{"role": "user", "author": "customer", "content": case["customer"]}]
         try:
             d = await ai.decide(TENANT, hist, kb, is_full, [], playbook=playbook)
         except Exception as e:  # keep going
             return case, None, {"score": 0, "note": f"agent error: {e}", "decision_ok": False,
                                 "facts": "wrong", "tone_ok": False}
         agent = f"ESCALATED (reason: {d.reason})" if d.action == "escalate" else f"REPLIED: {d.reply}"
-        prompt = (f"CUSTOMER: {case['customer']}\nEARLIER CONTEXT: {case.get('context') or '-'}\n"
+        shown = "\n".join(f"{'MANAGER' if h['role'] == 'assistant' else 'CUSTOMER'}: {h['content'][:400]}"
+                          for h in (case.get("history") or [])[-8:]) or "-"
+        prompt = (f"CONVERSATION THE AGENT SAW BEFORE (last turns):\n{shown}\n\n"
+                  f"CUSTOMER: {case['customer']}\nEARLIER CONTEXT NOTE: {case.get('context') or '-'}\n"
                   f"MANAGER'S REAL REPLY: {case['manager']}\nNEEDS_HUMAN: {case['needs_human']} "
                   f"({case.get('why_human') or ''})\n\nAGENT: {agent}")
         system = [{"type": "text", "text": f"{GRADER}\n\nKNOWLEDGE (current truth):\n{kb}",
@@ -68,6 +94,7 @@ async def main(path, report):
     is_full = len(kb) <= config.FULL_CONTEXT_CHARS
     playbook = knowledge.read_playbook()
     sem = asyncio.Semaphore(int(os.getenv("EVAL_CONCURRENCY", "6")))
+    _instrument()
     results = await asyncio.gather(*(run_case(c, kb, is_full, playbook, sem) for c in cases))
 
     n = len(results)
@@ -78,7 +105,14 @@ async def main(path, report):
              f"- Average score: **{avg:.2f} / 5**",
              f"- Right reply/escalate decision: **{dec}/{n}**",
              f"- Facts: {dict(facts)}",
-             f"- Tone ok: {sum(g['tone_ok'] for _, _, g in results)}/{n}", "", "## Weakest cases", ""]
+             f"- Tone ok: {sum(g['tone_ok'] for _, _, g in results)}/{n}"]
+    if USAGE:
+        lat = sorted(u[0] for u in USAGE)
+        tot = [sum(u[i] for u in USAGE) for i in range(1, 5)]
+        lines += [f"- Agent calls: {len(USAGE)}, latency p50 {lat[len(lat)//2]:.1f}s, p95 {lat[int(len(lat)*0.95)-1]:.1f}s",
+                  f"- Tokens per call (avg): input {tot[0]/len(USAGE):.0f}, cache read {tot[1]/len(USAGE):.0f}, "
+                  f"cache write {tot[2]/len(USAGE):.0f}, output {tot[3]/len(USAGE):.0f}"]
+    lines += ["", "## Weakest cases", ""]
     for case, d, g in sorted(results, key=lambda r: r[2]["score"])[:25]:
         agent = "—" if d is None else (f"ESCALATE: {d.reason}" if d.action == "escalate" else d.reply)
         lines += [f"### {g['score']}/5 · {case.get('topic', '')} · {case['file']}",
