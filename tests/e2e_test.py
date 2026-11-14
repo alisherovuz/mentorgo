@@ -6,7 +6,7 @@ import tempfile
 KDIR = tempfile.mkdtemp()
 open(os.path.join(KDIR, "00_playbook.md"), "w").write("Siz MentorGO menejerisiz. PLAYBOOK_MARKER")
 open(os.path.join(KDIR, "kurslar.md"), "w").write("DAAD mentorlik kursi magistratura uchun. SEED_MARKER")
-os.environ.update(BOT_TOKEN="123:ABC", ANTHROPIC_API_KEY="x", DEBOUNCE_SECONDS="0.3", OWNER_ID="1001", KNOWLEDGE_DIR=KDIR,
+os.environ.update(BOT_TOKEN="123:ABC", ANTHROPIC_API_KEY="x", DEBOUNCE_SECONDS="0.3", OWNER_ID="1001", ADMIN_IDS="3003", KNOWLEDGE_DIR=KDIR,
                   DATABASE_URL=os.getenv("TEST_DATABASE_URL", "postgresql://postgres@localhost:5432/support_test"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -172,7 +172,7 @@ async def main():
     notif = [c[1] for c in calls if c[0] == "SendMessage" and c[1].chat_id == OWNER]
     results.append(ok(len(notif) == 1 and "Javob bera olmadim" in notif[0].text and notif[0].reply_markup is not None, "owner notified with buttons"))
     results.append(ok(not [c for c in calls if c[0] == "SendMessage" and c[1].business_connection_id], "nothing sent to customer"))
-    notify_id = msg_counter[0]
+    notify_id = await db.pool.fetchval("SELECT notify_msg_id FROM escalations ORDER BY id DESC LIMIT 1")
 
     # owner replies to notification -> sent to customer, read, learned
     calls.clear()
@@ -215,6 +215,27 @@ async def main():
     await feed(upd(next(u), business_message=msg(23, CUSTOMER, CUSTOMER, "Erasmus haqida aytib bering", business=True)))
     await asyncio.sleep(0.6)
     results.append(ok(any("erasmus_uz" in (c[1].text or "") for c in calls if c[0] == "SendMessage"), "referral after release"))
+
+    # second admin: manages the owner's knowledge, gets alerts and can answer them
+    ADMIN = 3003
+    calls.clear()
+    await feed(upd(next(u), message=msg(50, ADMIN, ADMIN, "/add Erasmus kursi 1-dekabrda ochiladi, ADMIN_MARKER")))
+    srcs = await db.list_sources(OWNER)
+    results.append(ok(any("Erasmus kursi" in s_["title"] for s_ in srcs) and await db.get_tenant(ADMIN) is None,
+                      "admin /add goes to the MentorGO knowledge base"))
+    t_ = await db.get_tenant(OWNER)
+    results.append(ok(t_["owner_chat_id"] == OWNER, "admin does not take over owner's alert chat"))
+    calls.clear()
+    await feed(upd(next(u), business_message=msg(51, CUSTOMER, CUSTOMER, "pulimni qaytaring iltimos", business=True)))
+    await asyncio.sleep(0.8)
+    admin_alert = [c for c in calls if c[0] == "SendMessage" and c[1].chat_id == ADMIN]
+    results.append(ok(len(admin_alert) == 1 and "Javob bera olmadim" in admin_alert[0][1].text, "admin gets a copy of the alert"))
+    admin_copy_id = await db.pool.fetchval("SELECT msg_id FROM alert_messages ORDER BY escalation_id DESC LIMIT 1")
+    calls.clear()
+    rt = msg(admin_copy_id, 99, ADMIN, "🔔 Javob bera olmadim"); rt["from"]["is_bot"] = True
+    await feed(upd(next(u), message=msg(52, ADMIN, ADMIN, "Pulni qaytarish bo'yicha hozir qo'ng'iroq qilamiz", reply_to=rt)))
+    sent = [c[1] for c in calls if c[0] == "SendMessage" and c[1].business_connection_id == CONN]
+    results.append(ok(sent and sent[0].chat_id == CUSTOMER and "qo'ng'iroq" in sent[0].text, "admin reply to his copy reaches the customer"))
 
     # test mode
     calls.clear()

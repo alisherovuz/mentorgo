@@ -60,3 +60,11 @@ CACHE_TTL = _env("CACHE_TTL", "1h")
 CLAUDE_EFFORT = _env("CLAUDE_EFFORT", "")
 # Keep the prompt cache warm during these local hours (Asia/Tashkent), "" disables. Format "8-23".
 WARM_HOURS = _env("WARM_HOURS", "8-23")
+
+# Extra Telegram user ids (comma separated) who may use the bot's admin commands and answer
+# alerts. They manage the same MentorGO knowledge base as OWNER_ID.
+ADMIN_IDS = {int(x) for x in _env("ADMIN_IDS", "").replace(" ", "").split(",") if x}
+
+
+def is_admin(user_id: int) -> bool:
+    return (not OWNER_ID and not ADMIN_IDS) or user_id == OWNER_ID or user_id in ADMIN_IDS

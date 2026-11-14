@@ -17,7 +17,7 @@ router = Router(name="staff")
 def _is_staff_chat(chat_id: int, user_id: int) -> bool:
     if config.NOTIFY_CHAT_ID and chat_id == config.NOTIFY_CHAT_ID:
         return True  # everyone in the private staff group is staff
-    return chat_id == user_id and (not config.OWNER_ID or user_id == config.OWNER_ID)
+    return chat_id == user_id and config.is_admin(user_id)
 
 
 @router.message(F.reply_to_message & F.text & ~F.text.startswith("/"))

@@ -47,8 +47,13 @@ Fayl yuboring: PDF, DOCX, TXT, MD, CSV
 /status — holat"""
 
 
+def _owner(message: Message) -> int:
+    """The tenant every admin works on: the connected MentorGO account."""
+    return config.OWNER_ID or message.from_user.id
+
+
 async def _allowed(message: Message) -> bool:
-    if config.OWNER_ID and message.from_user.id != config.OWNER_ID:
+    if not config.is_admin(message.from_user.id):
         await message.answer("Assalomu alaykum! Bu MentorGO jamoasining ichki boti. Savollaringiz bo'lsa "
                              "@mentorgouz kanalidagi manzillarga yozing.")
         return False
@@ -56,7 +61,8 @@ async def _allowed(message: Message) -> bool:
 
 
 async def _tenant(message: Message):
-    return await db.ensure_tenant(message.from_user.id, message.chat.id)
+    is_owner = message.from_user.id == _owner(message)
+    return await db.ensure_tenant(_owner(message), message.chat.id if is_owner else None)
 
 
 def _status_text(t) -> str:
@@ -114,7 +120,7 @@ async def set_profile(message: Message, command: CommandObject) -> None:
         await message.answer(f"Qiymatni buyruqdan keyin yozing, masalan:\n<code>/{command.command} ...</code>",
                              parse_mode="HTML")
         return
-    await db.set_tenant_field(message.from_user.id, field, value[:4000])
+    await db.set_tenant_field(_owner(message), field, value[:4000])
     await message.answer("✅ Saqlandi.")
 
 
@@ -124,7 +130,7 @@ async def sales(message: Message, command: CommandObject) -> None:
         return
     await _tenant(message)
     on = (command.args or "").strip().lower() not in {"off", "0", "yo'q", "o'chir"}
-    await db.set_tenant_field(message.from_user.id, "sales_mode", on)
+    await db.set_tenant_field(_owner(message), "sales_mode", on)
     await message.answer("🛍 Sotuvchi rejimi yoqildi." if on else "Sotuvchi rejimi o'chirildi.")
 
 
@@ -134,7 +140,7 @@ async def pause(message: Message, command: CommandObject) -> None:
         return
     await _tenant(message)
     paused = command.command == "pause"
-    await db.set_tenant_field(message.from_user.id, "paused", paused)
+    await db.set_tenant_field(_owner(message), "paused", paused)
     await message.answer("⏸ To'xtatildi. Mijozlarga javob bermayman." if paused else "▶️ Yana ishlayapman.")
 
 
@@ -151,7 +157,7 @@ async def add_text(message: Message, command: CommandObject) -> None:
                              parse_mode="HTML")
         return
     title = text.splitlines()[0][:60]
-    sid = await knowledge.add(message.from_user.id, title, "text", text)
+    sid = await knowledge.add(_owner(message), title, "text", text)
     await message.answer(f"📚 Qo'shildi (#{sid}).")
 
 
@@ -166,7 +172,7 @@ async def add_url(message: Message, command: CommandObject) -> None:
         return
     try:
         title, text = await knowledge.fetch_url(url)
-        sid = await knowledge.add(message.from_user.id, f"{title} ({url})", "url", text)
+        sid = await knowledge.add(_owner(message), f"{title} ({url})", "url", text)
     except Exception as e:
         await message.answer(f"Sahifani o'qiy olmadim: {html.escape(str(e))[:200]}", parse_mode="HTML")
         return
@@ -186,7 +192,7 @@ async def add_document(message: Message, bot: Bot) -> None:
     await bot.download(doc, destination=buf)
     try:
         text = knowledge.extract_text(doc.file_name or "file.txt", buf.getvalue())
-        sid = await knowledge.add(message.from_user.id, doc.file_name or "Fayl", "file", text)
+        sid = await knowledge.add(_owner(message), doc.file_name or "Fayl", "file", text)
     except knowledge.ExtractError as e:
         await message.answer(str(e))
         return
@@ -202,7 +208,7 @@ async def add_document(message: Message, bot: Bot) -> None:
 async def reload_knowledge(message: Message) -> None:
     if not await _allowed(message):
         return
-    n = await knowledge.seed(message.from_user.id)
+    n = await knowledge.seed(_owner(message))
     pb = "bor" if knowledge.read_playbook() else "yo'q"
     await message.answer(f"🔄 Fayllardan qayta yuklandi: {n} ta bilim fayli, playbook: {pb}.")
 
@@ -211,7 +217,7 @@ async def reload_knowledge(message: Message) -> None:
 async def sources(message: Message) -> None:
     if not await _allowed(message):
         return
-    rows = await db.list_sources(message.from_user.id)
+    rows = await db.list_sources(_owner(message))
     if not rows:
         await message.answer("Bilim bazasi bo'sh. Fayl yuboring yoki /add, /url dan foydalaning.")
         return
@@ -228,7 +234,7 @@ async def delete_source(message: Message, command: CommandObject) -> None:
     if not await _allowed(message):
         return
     try:
-        ok = await db.delete_source(message.from_user.id, int((command.args or "").strip().lstrip("#")))
+        ok = await db.delete_source(_owner(message), int((command.args or "").strip().lstrip("#")))
     except ValueError:
         ok = False
     await message.answer("🗑 O'chirildi." if ok else "Bunday manba topilmadi. /sources")
@@ -248,7 +254,7 @@ async def add_link(message: Message, command: CommandObject) -> None:
             "Masalan: <code>/link Erasmus | https://t.me/erasmus_uz | Erasmus haqida so'ralsa</code>",
             parse_mode="HTML", disable_web_page_preview=True)
         return
-    lid = await db.add_link(message.from_user.id, parts[0], parts[1], parts[2] if len(parts) > 2 else "")
+    lid = await db.add_link(_owner(message), parts[0], parts[1], parts[2] if len(parts) > 2 else "")
     await message.answer(f"🔗 Qo'shildi (#{lid}).")
 
 
@@ -256,7 +262,7 @@ async def add_link(message: Message, command: CommandObject) -> None:
 async def links(message: Message) -> None:
     if not await _allowed(message):
         return
-    rows = await db.list_links(message.from_user.id)
+    rows = await db.list_links(_owner(message))
     if not rows:
         await message.answer("Yo'naltirishlar yo'q. /link bilan qo'shing.")
         return
@@ -269,7 +275,7 @@ async def delete_link(message: Message, command: CommandObject) -> None:
     if not await _allowed(message):
         return
     try:
-        ok = await db.delete_link(message.from_user.id, int((command.args or "").strip().lstrip("#")))
+        ok = await db.delete_link(_owner(message), int((command.args or "").strip().lstrip("#")))
     except ValueError:
         ok = False
     await message.answer("🗑 O'chirildi." if ok else "Topilmadi. /links")
@@ -281,7 +287,7 @@ async def delete_link(message: Message, command: CommandObject) -> None:
 async def stats(message: Message) -> None:
     if not await _allowed(message):
         return
-    s = await db.stats(message.from_user.id)
+    s = await db.stats(_owner(message))
     await message.answer(
         f"📊 <b>Oxirgi 7 kun</b>\n"
         f"Mijozlar: {s['customers']}\n"
@@ -297,8 +303,8 @@ async def test_mode(message: Message) -> None:
         return
     t = await _tenant(message)
     on = not t["test_mode"]
-    await db.set_tenant_field(message.from_user.id, "test_mode", on)
-    await db.clear_history(message.from_user.id, message.from_user.id)
+    await db.set_tenant_field(_owner(message), "test_mode", on)
+    await db.clear_history(_owner(message), message.from_user.id)
     if on:
         await message.answer("🧪 Test rejimi yoqildi. Endi mijoz bo'lib yozing, men qanday javob berishimni "
                              "ko'rasiz. Chiqish: /test")
@@ -315,12 +321,12 @@ async def free_text(message: Message) -> None:
         await message.answer("Bilim qo'shish: fayl yuboring yoki <code>/add matn</code>. "
                              "Sinab ko'rish: /test. Barcha buyruqlar: /help", parse_mode="HTML")
         return
-    owner_id = message.from_user.id
-    await db.add_message(owner_id, owner_id, "user", "customer", message.text)
+    owner_id, test_chat = _owner(message), message.from_user.id
+    await db.add_message(owner_id, test_chat, "user", "customer", message.text)
     await message.bot.send_chat_action(message.chat.id, "typing")
-    decision = await engine.think(t, owner_id)
+    decision = await engine.think(t, test_chat)
     if decision.action in ("reply", "handoff"):
-        await db.add_message(owner_id, owner_id, "assistant", "bot", decision.reply)
+        await db.add_message(owner_id, test_chat, "assistant", "bot", decision.reply)
         for part in engine.split(decision.reply):
             await message.answer(part)
         if decision.action == "handoff":

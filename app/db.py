@@ -87,6 +87,13 @@ ALTER TABLE escalations ADD COLUMN IF NOT EXISTS notify_chat_id BIGINT;
 ALTER TABLE escalations ADD COLUMN IF NOT EXISTS answer TEXT;
 CREATE INDEX IF NOT EXISTS escalations_notify_idx ON escalations (notify_chat_id, notify_msg_id);
 
+CREATE TABLE IF NOT EXISTS alert_messages (
+    escalation_id INT NOT NULL,
+    chat_id       BIGINT NOT NULL,
+    msg_id        BIGINT NOT NULL,
+    PRIMARY KEY (chat_id, msg_id)
+);
+
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -276,9 +283,18 @@ async def set_escalation_notify(esc_id: int, notify_chat_id: int, notify_msg_id:
                        esc_id, notify_chat_id, notify_msg_id)
 
 
+async def add_alert_message(esc_id: int, chat_id: int, msg_id: int) -> None:
+    """One alert can be sent to several staff chats; each copy can be replied to."""
+    await _p().execute("INSERT INTO alert_messages (escalation_id, chat_id, msg_id) VALUES ($1,$2,$3) "
+                       "ON CONFLICT DO NOTHING", esc_id, chat_id, msg_id)
+
+
 async def escalation_by_notify(notify_chat_id: int, notify_msg_id: int) -> asyncpg.Record | None:
     return await _p().fetchrow(
-        "SELECT * FROM escalations WHERE notify_chat_id=$1 AND notify_msg_id=$2", notify_chat_id, notify_msg_id)
+        """SELECT e.* FROM escalations e
+           WHERE (e.notify_chat_id=$1 AND e.notify_msg_id=$2)
+              OR e.id = (SELECT escalation_id FROM alert_messages WHERE chat_id=$1 AND msg_id=$2)
+           LIMIT 1""", notify_chat_id, notify_msg_id)
 
 
 async def get_escalation(esc_id: int) -> asyncpg.Record | None:

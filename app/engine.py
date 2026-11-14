@@ -184,6 +184,13 @@ async def escalate(bot: Bot, tenant, chat_id: int, p: Pending, reason: str, bot_
     target = config.NOTIFY_CHAT_ID or tenant["owner_chat_id"] or owner_id
     sent = await bot.send_message(target, text, parse_mode="HTML", reply_markup=kb)
     await db.set_escalation_notify(esc_id, target, sent.message_id)
+    if not config.NOTIFY_CHAT_ID:  # no staff group: every admin gets their own copy to reply to
+        for admin in config.ADMIN_IDS - {target, owner_id}:
+            try:
+                copy = await bot.send_message(admin, text, parse_mode="HTML", reply_markup=kb)
+                await db.add_alert_message(esc_id, admin, copy.message_id)
+            except Exception as e:  # admin has not opened the bot yet
+                log.warning("Could not alert admin %s: %s", admin, e)
 
 
 def split(text: str, limit: int = 4000) -> list[str]:

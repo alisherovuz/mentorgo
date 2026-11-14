@@ -21,6 +21,7 @@ Bilimni yangilash: `knowledge/` dagi faylni tahrirlab push qiling (deploy qayta 
 | `ANTHROPIC_API_KEY` | Claude API kaliti |
 | `DATABASE_URL` | Postgres manzili |
 | `OWNER_ID` | MentorGO Manager akkauntining Telegram ID si: faqat shu akkaunt ulay oladi |
+| `ADMIN_IDS` | ixtiyoriy: qo'shimcha adminlarning Telegram ID lari (vergul bilan). Ular buyruqlarni ishlata oladi va bildirishnomalarni oladi |
 | `NOTIFY_CHAT_ID` | ixtiyoriy: xodimlar guruhi; bildirishnomalar shu yerga boradi |
 | `CLAUDE_MODEL` | default `claude-sonnet-5-5` |
 
